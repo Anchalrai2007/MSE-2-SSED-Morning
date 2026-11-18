@@ -32,6 +32,7 @@ jobs:
             echo "Missing DOCKERHUB_USERNAME"
             exit 1
           }
+
           test -n "$DOCKERHUB_TOKEN" || {
             echo "Missing DOCKERHUB_TOKEN"
             exit 1
@@ -120,9 +121,21 @@ jobs:
             docker inspect taskflow-frontend-deploy \
               --format='Status={{.State.Status}} ExitCode={{.State.ExitCode}} Health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' || true
 
+            echo "========== FRONTEND HEALTH CHECK DETAILS =========="
+            docker inspect taskflow-frontend-deploy \
+              --format='{{json .State.Health.Log}}' || true
+
+            echo "========== FRONTEND IMAGE HEALTHCHECK =========="
+            docker inspect taskflow-frontend-deploy \
+              --format='{{json .Config.Healthcheck}}' || true
+
             echo "========== FRONTEND NETWORK =========="
             docker inspect taskflow-frontend-deploy \
               --format='{{json .NetworkSettings.Networks}}' || true
+
+            echo "========== FRONTEND INTERNAL HTTP TEST =========="
+            docker exec taskflow-frontend-deploy \
+              wget -S -O /dev/null http://127.0.0.1:8080/ || true
           }
 
           echo "Waiting for backend container..."
@@ -180,6 +193,11 @@ jobs:
               break
             fi
 
+            if [ "$status" = "unhealthy" ]; then
+              echo "Frontend has become unhealthy."
+              break
+            fi
+
             sleep 3
           done
 
@@ -194,7 +212,7 @@ jobs:
           echo "Testing Nginx from inside the frontend container..."
 
           if ! docker exec taskflow-frontend-deploy \
-            wget -q --spider http://127.0.0.1:8080/; then
+            wget -q -O /dev/null http://127.0.0.1:8080/; then
             echo "Internal frontend Nginx check failed."
             diagnostics
             exit 1
